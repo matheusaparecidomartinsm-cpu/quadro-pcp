@@ -249,7 +249,11 @@ button,input,textarea,select{font:inherit;color:inherit}
 .who-btn img{width:28px;height:28px;border-radius:50%;flex:none}
 .who-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 body.locked{overflow:hidden}
-.auth{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:var(--bg);background-image:radial-gradient(var(--dot) 1.2px, transparent 1.3px);background-size:22px 22px;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));overflow:auto}
+.auth{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));overflow:auto}
+.auth-ground{position:absolute;inset:0;background:var(--bg);background-image:radial-gradient(var(--dot) 1.2px, transparent 1.3px);background-size:22px 22px}
+.auth.is-flying{overflow:hidden;pointer-events:none}
+.fly-note{position:absolute;border-radius:2px 2px 12px 2px / 2px 2px 7px 2px;background:var(--c);box-shadow:0 10px 18px -10px rgba(var(--shadow-rgb),.45);will-change:transform,opacity}
+.fly-note::before{content:"";position:absolute;top:-6px;left:50%;width:40%;height:12px;transform:translateX(-50%);background:var(--tape)}
 .auth-stack{position:absolute;width:min(400px,calc(100% - 32px));height:420px;pointer-events:none}
 .auth-stack i{position:absolute;inset:0;border-radius:4px 4px 26px 4px;box-shadow:0 20px 40px -20px rgba(var(--shadow-rgb),.4)}
 .auth-stack i:nth-child(1){background:var(--note-blue);transform:rotate(-7deg) translate(-14px,10px)}
@@ -315,6 +319,7 @@ body.locked{overflow:hidden}
 </main>
 
 <section class="auth" id="auth" hidden aria-labelledby="a-title">
+  <div class="auth-ground" aria-hidden="true"></div>
   <div class="auth-stack" aria-hidden="true"><i></i><i></i></div>
   <form class="big-note auth-card" id="a-form" data-color="yellow" novalidate>
     <div class="auth-brand"><div class="brand-mark"><i></i><i></i><i></i></div><b>Quadro PCP</b></div>
@@ -357,6 +362,7 @@ const h = (tag, attrs={}, ...kids) => {
   for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(kid));
   return el;
 };
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter(k => k != null && k !== false && k !== ""));
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const randRot = () => +(Math.random()*5 - 2.5).toFixed(2);
 
@@ -546,7 +552,7 @@ function cardFor(t){
     h("span",{class:"avatars"},
       h("img",{src:avatarOf(t.createdBy),alt:"",title:`Criado por ${nameOf(t.createdBy)}`}),
       t.assignee && h("img",{src:avatarOf(t.assignee),alt:"",title:`Para ${nameOf(t.assignee)}`})));
-  el.replaceChildren(
+  fill(el,
     t.example && h("span",{class:"example-tag",text:"exemplo"}),
     done && h("span",{class:"stamp",text:"FEITO"}),
     h("h3",{text:t.title||"Sem título"}),
@@ -874,7 +880,7 @@ function openDetail(id){
     const acts = h("div",{class:"actions",style:"margin-top:14px"},
       h("button",{class:"btn btn-sm spacer",type:"button",hidden:!state.canWrite,onclick:()=>{acts.hidden=true;confirmBox.hidden=false;}},"Apagar"),
       h("button",{class:"btn btn-sm",type:"button",hidden:!state.canWrite,onclick:()=>openComposer({}, id)},"Editar"));
-    head.replaceChildren(
+    fill(head,
       h("button",{type:"button",class:"close","aria-label":"Fechar",onclick:closeModal}, svgIcon("x")),
       t.example && h("span",{class:"field-label",style:"margin-top:0",text:"Post-it de exemplo"}),
       h("h2",{text:t.title}),
@@ -1011,18 +1017,22 @@ $("#a-form").addEventListener("submit", async e => {
   try{
     if (!usuario) throw {message:"Digite seu usuário."};
     if (authMode === "login"){
+      btn.textContent = "Entrando…";
+      flyOnEnter = true;
       const {error} = await sb.auth.signInWithPassword({email:userEmail(usuario), password:pass});
-      if (error) throw error;
+      if (error){ flyOnEnter = false; throw error; }
     } else {
       if (!nome) throw {message:"Escreva seu nome. Ele aparece nos post-its e respostas."};
       if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) throw {message:"O usuário precisa ter de 3 a 30 caracteres: letras, números, ponto, hífen ou sublinhado."};
       if (pass.length < 6) throw {message:"A senha precisa ter pelo menos 6 caracteres."};
+      flyOnEnter = true;
       const {data, error} = await sb.auth.signUp({email:userEmail(usuario), password:pass, options:{data:{username:usuario, name:nome, nome}}});
-      if (error) throw error;
-      if (!data.session) throw {message:"A conta foi criada, mas precisa ser ativada pelo administrador antes do primeiro acesso."};
+      if (error){ flyOnEnter = false; throw error; }
+      if (!data.session){ flyOnEnter = false; throw {message:"A conta foi criada, mas precisa ser ativada pelo administrador antes do primeiro acesso."}; }
     }
   } catch(err){ authMsg(traduz(err)); }
   btn.disabled = false;
+  btn.textContent = authMode === "signup" ? "Criar conta" : "Entrar";
 });
 function traduz(err){
   const m = (err && err.message) || "";
@@ -1058,9 +1068,75 @@ async function enter(session){
   $("#who").hidden = false;
   $("#who-avatar").src = avatarOf(u.id);
   $("#who-name").textContent = plainName(u.id);
-  showAuth(false);
   boardUnsub && boardUnsub();
   boardUnsub = store.subscribeTasks(onTasks);
+  const fly = flyOnEnter; flyOnEnter = false;
+  if (fly && !authEl.hidden) await flyAway();
+  showAuth(false);
+}
+/* ---------- Decolagem: os post-its do login saem voando ---------- */
+let flyOnEnter = false;
+function flyAway(){
+  const auth = authEl, card = $("#a-form"), ground = $(".auth-ground", auth);
+  document.body.classList.remove("locked");
+  if (reduced){
+    return new Promise(res => { auth.animate([{opacity:1},{opacity:0}],{duration:220,easing:"ease-out"}).onfinish = res; });
+  }
+  auth.classList.add("is-flying");
+  const W = innerWidth, H = innerHeight, far = Math.hypot(W, H);
+  const r = card.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  const rnd = (a, b) => a + Math.random()*(b - a);
+  const anims = [], extras = [];
+
+  // um bloco de post-its escondido atrás do cartão
+  const n = W < 600 ? 10 : 16;
+  for (let i = 0; i < n; i++){
+    const size = rnd(64, 120);
+    const el = h("i",{class:"fly-note","aria-hidden":"true",style:`--c:var(--note-${COLORS[i % COLORS.length]});width:${size}px;height:${size}px;left:${cx - size/2 + rnd(-r.width*.3, r.width*.3)}px;top:${cy - size/2 + rnd(-r.height*.3, r.height*.3)}px`});
+    card.before(el); extras.push(el);
+  }
+  // trajetória: rajada saindo do centro, com leve subida, girando
+  const path = (angle, dist, spin, lift=-.18) => {
+    const dx = Math.cos(angle)*dist, dy = Math.sin(angle)*dist + H*lift;
+    return {dx, dy, spin};
+  };
+  const fly = (el, base, p, delay, dur, startScale=1, startOpacity=1) => anims.push(el.animate([
+    {transform:`${base} translate(0,0) rotate(0deg) scale(${startScale})`, opacity:startOpacity, easing:"cubic-bezier(.2,.9,.3,1)"},
+    {transform:`${base} translate(${p.dx*.06}px,${p.dy*.06 - 18}px) rotate(${p.spin*.06}deg) scale(1.06)`, opacity:1, offset:.2, easing:"cubic-bezier(.5,0,.9,.45)"},
+    {transform:`${base} translate(${p.dx}px,${p.dy}px) rotate(${p.spin}deg) scale(${rnd(.75,1.1)})`, opacity:1}
+  ],{duration:dur, delay, fill:"forwards"}));
+
+  extras.forEach((el, i) => {
+    const a = (i / n) * Math.PI * 2 + rnd(-.35, .35);
+    fly(el, "", path(a, far*rnd(.7, 1), rnd(240, 620)*(Math.random()<.5?-1:1)), 40 + i*22, rnd(820, 1150), .55, 0);
+  });
+  // os dois post-its de fundo e, por último, o cartão do login
+  const stack = [...auth.querySelectorAll(".auth-stack i")];
+  const stackBase = ["rotate(-7deg) translate(-14px,10px)", "rotate(5deg) translate(12px,6px)"];
+  stack.forEach((el, i) => fly(el, stackBase[i], path(i ? -.35 : Math.PI + .5, far*.9, i ? 380 : -420), 70 + i*40, 980));
+  fly(card, "", path(-Math.PI/2 + rnd(-.25, .25), far*.85, rnd(-200, 200), -.05), 120, 1050);
+
+  // o chão some e o quadro aparece; os post-its dele colam de novo
+  anims.push(ground.animate([{opacity:1},{opacity:0}],{duration:520, delay:380, easing:"cubic-bezier(.4,0,.2,1)", fill:"forwards"}));
+  setTimeout(replaySlap, 520);
+
+  return Promise.all(anims.map(a => a.finished.catch(() => {}))).then(() => {
+    auth.hidden = true;
+    auth.classList.remove("is-flying");
+    extras.forEach(el => el.remove());
+    anims.forEach(a => a.cancel());
+  });
+}
+function replaySlap(){
+  let i = 0;
+  cardEls.forEach(el => {
+    if (!el.isConnected) return;
+    el.classList.remove("is-new"); void el.offsetWidth;
+    el.style.animationDelay = (i++ * 60) + "ms";
+    el.classList.add("is-new");
+    el.addEventListener("animationend", () => { el.classList.remove("is-new"); el.style.animationDelay = ""; }, {once:true});
+  });
 }
 function leave(){
   boardUnsub && boardUnsub(); boardUnsub = null;

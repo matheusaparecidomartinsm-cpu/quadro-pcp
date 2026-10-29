@@ -62,6 +62,8 @@
 }
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}
+img{max-width:100%}
 html,body{height:100%}
 body{
   margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-ui); font-size:15px; line-height:1.45;
@@ -1101,8 +1103,7 @@ $("#rename").addEventListener("click", () => {
 
 setAuthMode("login");
 sb.auth.onAuthStateChange((event, session) => {
-  if (session) enter(session);
-  else leave();
+  setTimeout(() => { if (session) enter(session); else leave(); }, 0);
 });
 })();
 </script>

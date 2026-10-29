@@ -260,6 +260,7 @@ body.locked{overflow:hidden}
 .auth-submit:hover{background:var(--note-ink)}
 .auth-switch{display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap}
 .auth-switch button{border:none;background:none;cursor:pointer;color:var(--note-ink);font-weight:600;font-size:14px;text-decoration:underline;text-underline-offset:3px;padding:4px 0}
+.auth-hint{font-size:13px;color:var(--note-ink-soft);align-self:center}
 .auth-msg{margin-top:12px;font-size:14px;font-weight:600;color:#9e1c10;background:rgba(255,255,255,.45);border-radius:8px;padding:8px 10px}
 .auth-msg.good{color:#14532d}
 
@@ -298,7 +299,7 @@ body.locked{overflow:hidden}
     </label>
     <button class="btn btn-ghost" id="dsBtn" title="Guia de estilo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5" transform="rotate(8 17 7)"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg><span class="btn-label">Estilo</span></button>
     <div class="who" id="who" hidden>
-      <button class="who-btn" id="rename" title="Mudar meu nome"><img id="who-avatar" alt=""><span id="who-name"></span></button>
+      <button class="who-btn" id="rename" title="Minha conta"><img id="who-avatar" alt=""><span id="who-name"></span></button>
       <button class="btn btn-ghost btn-sm" id="logout">Sair</button>
     </div>
     <button class="btn btn-primary" id="newBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="btn-label">Novo post-it</span></button>
@@ -317,7 +318,7 @@ body.locked{overflow:hidden}
     <div class="auth-brand"><div class="brand-mark"><i></i><i></i><i></i></div><b>Quadro PCP</b></div>
     <h2 id="a-title">Entrar no quadro</h2>
     <div id="a-name-row"><label class="field-label" for="a-name">Seu nome</label><input class="ui-input" id="a-name" autocomplete="name" maxlength="80" placeholder="Como aparece nos post-its"></div>
-    <div id="a-email-row"><label class="field-label" for="a-email">E-mail</label><input class="ui-input" id="a-email" type="email" autocomplete="email" placeholder="voce@empresa.com.br"></div>
+    <div id="a-email-row"><label class="field-label" for="a-email">Usuário</label><input class="ui-input" id="a-email" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" placeholder="ex.: matheus.martins"></div>
     <div id="a-pass-row"><label class="field-label" for="a-pass">Senha</label><input class="ui-input" id="a-pass" type="password" autocomplete="current-password" placeholder="Mínimo de 6 caracteres"></div>
     <div class="auth-msg" id="a-msg" role="alert" hidden></div>
     <button class="btn btn-primary auth-submit" id="a-submit" type="submit">Entrar</button>
@@ -434,9 +435,10 @@ function onDbError(e){
 
 /* ================= Pessoas ================= */
 const members = new Map(); // id -> nome
+const usernames = new Map(); // id -> usuario
 async function loadMembers(){
-  const {data} = await sb.from("quadro_membros").select("id,nome");
-  (data||[]).forEach(m => members.set(m.id, m.nome));
+  const {data} = await sb.from("quadro_membros").select("id,nome,usuario");
+  (data||[]).forEach(m => { members.set(m.id, m.nome); if (m.usuario) usernames.set(m.id, m.usuario); });
 }
 sb.channel("quadro-membros").on("postgres_changes",{event:"*",schema:"public",table:"quadro_membros"}, p => {
   if (p.new && p.new.id) { members.set(p.new.id, p.new.nome); state.tasks.forEach(t => cardFor(t)); detailRedraw && detailRedraw(); }
@@ -779,7 +781,7 @@ function openComposer(preset={}, editId=null){
     const menu = h("div",{class:"picker-menu",hidden:true});
     const show = q => {
       q = (q||"").toLowerCase();
-      const hits = [...members.entries()].filter(([,n]) => n.toLowerCase().includes(q)).sort((x,y) => x[1].localeCompare(y[1])).slice(0,8);
+      const hits = [...members.entries()].filter(([mid,n]) => n.toLowerCase().includes(q) || (usernames.get(mid)||"").includes(q)).sort((x,y) => x[1].localeCompare(y[1])).slice(0,8);
       menu.replaceChildren(...hits.map(([mid,n]) => h("button",{type:"button",onclick:()=>{ assignee=mid; renderPick(); }}, h("img",{src:avatarOf(mid),alt:""}), n + (mid===state.me?" (você)":""))));
       menu.hidden = !hits.length;
     };
@@ -984,55 +986,50 @@ let authMode = "login";
 function setAuthMode(m){
   authMode = m;
   authEl.dataset.mode = m;
-  $("#a-title").textContent = {login:"Entrar no quadro", signup:"Criar conta", reset:"Recuperar senha", newpass:"Nova senha"}[m];
+  $("#a-title").textContent = m === "signup" ? "Criar conta" : "Entrar no quadro";
   $("#a-name-row").hidden = m !== "signup";
-  $("#a-email-row").hidden = m === "newpass";
-  $("#a-pass-row").hidden = m === "reset";
-  $("#a-pass").autocomplete = (m === "signup" || m === "newpass") ? "new-password" : "current-password";
-  $("#a-submit").textContent = {login:"Entrar", signup:"Criar conta", reset:"Enviar link", newpass:"Salvar senha"}[m];
-  $("#a-switch").hidden = m === "newpass";
+  $("#a-pass").autocomplete = m === "signup" ? "new-password" : "current-password";
+  $("#a-email").placeholder = m === "signup" ? "Escolha um usuário (ex.: matheus.martins)" : "Seu usuário";
+  $("#a-submit").textContent = m === "signup" ? "Criar conta" : "Entrar";
   $("#a-switch").replaceChildren(...(m === "login"
-    ? [h("button",{type:"button",onclick:()=>setAuthMode("signup")},"Criar conta"), h("button",{type:"button",onclick:()=>setAuthMode("reset")},"Esqueci a senha")]
+    ? [h("button",{type:"button",onclick:()=>setAuthMode("signup")},"Criar conta"), h("span",{class:"auth-hint",text:"Esqueceu a senha? Fale com o administrador."})]
     : [h("button",{type:"button",onclick:()=>setAuthMode("login")},"Já tenho conta")]));
   authMsg("");
 }
+const DOMAIN = "profood.local";
+const normU = v => String(v||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9._-]/g,"");
+const userEmail = u => `${normU(u)}@${DOMAIN}`;
 function authMsg(t, good){ const m = $("#a-msg"); m.textContent = t; m.hidden = !t; m.classList.toggle("good", !!good); }
 function showAuth(show){ authEl.hidden = !show; document.body.classList.toggle("locked", show); if (show) setTimeout(() => (authMode==="signup"?$("#a-name"):$("#a-email")).focus(), 50); }
 
 $("#a-form").addEventListener("submit", async e => {
   e.preventDefault();
-  const email = $("#a-email").value.trim(), pass = $("#a-pass").value, nome = $("#a-name").value.trim();
+  const usuario = normU($("#a-email").value), pass = $("#a-pass").value, nome = $("#a-name").value.trim();
   const btn = $("#a-submit"); btn.disabled = true; authMsg("");
   try{
+    if (!usuario) throw {message:"Digite seu usuário."};
     if (authMode === "login"){
-      const {error} = await sb.auth.signInWithPassword({email, password:pass});
+      const {error} = await sb.auth.signInWithPassword({email:userEmail(usuario), password:pass});
       if (error) throw error;
-    } else if (authMode === "signup"){
+    } else {
       if (!nome) throw {message:"Escreva seu nome. Ele aparece nos post-its e respostas."};
+      if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) throw {message:"O usuário precisa ter de 3 a 30 caracteres: letras, números, ponto, hífen ou sublinhado."};
       if (pass.length < 6) throw {message:"A senha precisa ter pelo menos 6 caracteres."};
-      const {data, error} = await sb.auth.signUp({email, password:pass, options:{data:{nome}, emailRedirectTo:location.origin}});
+      const {data, error} = await sb.auth.signUp({email:userEmail(usuario), password:pass, options:{data:{username:usuario, name:nome, nome}}});
       if (error) throw error;
-      if (!data.session){ authMsg("Conta criada. Abra o e-mail de confirmação que enviamos e depois entre aqui.", true); setAuthMode("login"); authMsg("Conta criada. Confirme pelo link no seu e-mail e depois entre.", true); }
-    } else if (authMode === "reset"){
-      const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo:location.origin});
-      if (error) throw error;
-      authMsg("Se esse e-mail tiver conta, você vai receber um link para criar uma nova senha.", true);
-    } else if (authMode === "newpass"){
-      if (pass.length < 6) throw {message:"A senha precisa ter pelo menos 6 caracteres."};
-      const {error} = await sb.auth.updateUser({password:pass});
-      if (error) throw error;
-      toast("Senha atualizada");
+      if (!data.session) throw {message:"A conta foi criada, mas precisa ser ativada pelo administrador antes do primeiro acesso."};
     }
   } catch(err){ authMsg(traduz(err)); }
   btn.disabled = false;
 });
 function traduz(err){
   const m = (err && err.message) || "";
-  if (/Invalid login credentials/i.test(m)) return "E-mail ou senha incorretos.";
-  if (/Email not confirmed/i.test(m)) return "Confirme seu e-mail pelo link que enviamos antes de entrar.";
-  if (/already registered|already exists/i.test(m)) return "Esse e-mail já tem conta. Use Entrar.";
+  if (/Invalid login credentials/i.test(m)) return "Usuário ou senha incorretos.";
+  if (/Email not confirmed/i.test(m)) return "Sua conta ainda não foi ativada. Fale com o administrador.";
+  if (/already registered|already exists/i.test(m)) return "Esse usuário já existe. Use Entrar.";
+  if (/sending.*email|confirmation email/i.test(m)) return "O cadastro está desativado no momento. Peça ao administrador para criar seu acesso.";
   if (/rate limit|too many/i.test(m)) return "Muitas tentativas. Espere um minuto e tente de novo.";
-  if (/valid email|invalid.*email/i.test(m)) return "Esse e-mail não parece válido.";
+  if (/valid email|invalid.*email/i.test(m)) return "Esse usuário não é válido. Use letras, números, ponto, hífen ou sublinhado.";
   return m || "Algo deu errado. Tente de novo.";
 }
 
@@ -1040,8 +1037,13 @@ async function ensureMember(u){
   if (members.has(u.id)) return;
   await loadMembers();
   if (members.has(u.id)) return;
-  const nome = (u.user_metadata && u.user_metadata.nome) || (u.email||"").split("@")[0] || "Sem nome";
-  const {error} = await sb.from("quadro_membros").insert({id:u.id, nome});
+  const md = u.user_metadata || {};
+  const usuario = normU(md.username || (u.email||"").split("@")[0]);
+  const nome = md.nome || md.name || usuario || "Sem nome";
+  const row = {id:u.id, nome};
+  if (/^[a-z0-9._-]{3,30}$/.test(usuario)) row.usuario = usuario;
+  let {error} = await sb.from("quadro_membros").insert(row);
+  if (error && row.usuario){ delete row.usuario; ({error} = await sb.from("quadro_membros").insert(row)); }
   if (!error) members.set(u.id, nome);
 }
 
@@ -1066,30 +1068,41 @@ function leave(){
   setAuthMode("login"); showAuth(true);
 }
 $("#logout").addEventListener("click", () => sb.auth.signOut());
-$("#rename").addEventListener("click", async () => {
+$("#rename").addEventListener("click", () => {
   const cur = plainName(state.me);
-  const f = h("form",{class:"big-note"},
+  const err = h("div",{class:"err",hidden:true});
+  const f = h("form",{class:"big-note",novalidate:true},
     h("button",{type:"button",class:"close","aria-label":"Fechar",onclick:closeModal}, svgIcon("x")),
     h("label",{class:"field-label",for:"f-nome",style:"margin-top:0",text:"Seu nome no quadro"}),
     h("input",{class:"note-input title",id:"f-nome",maxlength:"80",value:cur,autofocus:true}),
+    h("label",{class:"field-label",for:"f-senha",text:"Nova senha (deixe em branco para manter)"}),
+    h("input",{class:"ui-input",id:"f-senha",type:"password",autocomplete:"new-password",placeholder:"Mínimo de 6 caracteres"}),
+    err,
     h("div",{class:"actions"}, h("button",{type:"button",class:"btn",onclick:closeModal},"Cancelar"), h("button",{type:"submit",class:"btn btn-primary"},"Salvar")));
   f.addEventListener("submit", async e => {
     e.preventDefault();
-    const nome = $("#f-nome").value.trim(); if (!nome) return;
-    const {error} = await sb.from("quadro_membros").update({nome}).eq("id", state.me);
-    if (error) { writeFailed(error); return; }
-    members.set(state.me, nome); $("#who-name").textContent = nome; $("#who-avatar").src = avatarOf(state.me);
-    state.tasks.forEach(t => cardFor(t)); closeModal(); toast("Nome atualizado");
+    const nome = $("#f-nome").value.trim(), senha = $("#f-senha").value;
+    if (!nome){ err.textContent = "O nome não pode ficar vazio."; err.hidden = false; return; }
+    if (senha && senha.length < 6){ err.textContent = "A nova senha precisa ter pelo menos 6 caracteres."; err.hidden = false; return; }
+    if (nome !== cur){
+      const {error} = await sb.from("quadro_membros").update({nome}).eq("id", state.me);
+      if (error){ writeFailed(error); return; }
+      members.set(state.me, nome); $("#who-name").textContent = nome; $("#who-avatar").src = avatarOf(state.me);
+      state.tasks.forEach(t => cardFor(t));
+    }
+    if (senha){
+      const {error} = await sb.auth.updateUser({password:senha});
+      if (error){ err.textContent = traduz(error); err.hidden = false; return; }
+    }
+    closeModal(); toast(senha ? "Conta atualizada" : "Nome atualizado");
   });
   modal(f);
 });
 
 setAuthMode("login");
 sb.auth.onAuthStateChange((event, session) => {
-  if (event === "PASSWORD_RECOVERY"){ showAuth(true); setAuthMode("newpass"); return; }
-  if (session && authMode !== "newpass") enter(session);
-  else if (session && event === "USER_UPDATED"){ setAuthMode("login"); enter(session); }
-  else if (!session) leave();
+  if (session) enter(session);
+  else leave();
 });
 })();
 </script>

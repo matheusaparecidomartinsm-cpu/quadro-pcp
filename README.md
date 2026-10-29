@@ -8,7 +8,8 @@ Site estático (HTML + JS puro) com Supabase para login, banco e tempo real; pub
 - **Raias:** A fazer, Fazendo, Aguardando resposta, Feito.
 - **Post-it:** título, detalhes, prazo, cor, responsável. Arraste entre raias (no celular, segure antes de arrastar ou use "Mover para").
 - **Respostas:** abra o post-it para conversar; o contador é mantido pelo banco.
-- **Login:** e-mail e senha (Supabase Auth). Só quem está logado vê e edita o quadro.
+- **Login:** usuário e senha. Por baixo, o Supabase Auth guarda a conta como `usuario@profood.local` (mesmo padrão dos outros apps do projeto), sem envio de e-mail. Só quem está logado vê e edita o quadro.
+- **Senha esquecida:** o administrador redefine. Logado, cada pessoa troca nome e senha em "Minha conta" (clique no nome, no topo).
 
 ## Arquivos
 
@@ -21,7 +22,7 @@ Site estático (HTML + JS puro) com Supabase para login, banco e tempo real; pub
 
 Tabelas no schema `public`, todas com RLS:
 
-- `quadro_membros` — nome de cada usuário (id = `auth.users.id`)
+- `quadro_membros` — nome e usuário de cada pessoa (id = `auth.users.id`)
 - `quadro_tarefas` — os post-its
 - `quadro_respostas` — respostas de cada post-it (trigger atualiza `quadro_tarefas.respostas`)
 
@@ -35,5 +36,5 @@ Qualquer servidor estático serve, por exemplo:
 npx serve .
 ```
 
-Para os links de confirmação e de recuperação de senha voltarem para o site certo, adicione a URL do site em
-Supabase → Authentication → URL Configuration (Site URL e Redirect URLs).
+O cadastro pelo próprio site precisa de **Confirm email desligado** em
+Supabase → Authentication → Sign In / Providers → Email, já que as contas não têm e-mail real.
